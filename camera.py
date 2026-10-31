@@ -260,7 +260,6 @@ class TraineeVisionNode(Node):
             self.color() # encontrar cores que estão faltando
             self.align_base()
             if self.color_done and self.distance_pixel()==False: # se ele estiver dentro da distancia tolerada:
-                self.color()
                 self.detect_color_shape()
         elif len(self.list_)==3:
             self.get_logger().info(self.list_)
