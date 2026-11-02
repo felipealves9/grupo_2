@@ -140,11 +140,11 @@ class SimpleTakeoffLand(Node):
         distancia_do_alvo = ((self.alvo_x-self.atual_x)**2 + 
                                 (self.alvo_y-self.atual_y)**2 + 
                                 (self.alvo_z-self.atual_z)**2)**0.5
-        if distancia_do_alvo < 1.0:
-            msg = String()
-            msg.data = 'ok'
-            self.ok_align.publish(msg)
         if distancia_do_alvo < 0.5:
+            if self.atual_z <6.5:
+                msg = String()
+                msg.data = 'ok'
+                self.ok_align.publish(msg)
             # ELE CHEGOU
             # Se tiver algum objetivo faltando, continuar missão
             if self.current_waypoint_index < len(self.waypoints)-1:
@@ -173,10 +173,12 @@ class SimpleTakeoffLand(Node):
             distancia = ((self.x_area*0.03)**2+(self.y_area*0.03)**2)**0.5
         
             new_waypoint = [self.atual_x+(self.x_area*0.01),self.atual_y+(self.y_area*0.01),8.0]
-            anterior = self.waypoints[self.current_waypoint_index]
+            new_waypoint_ = [self.atual_x+(self.x_area*0.01),self.atual_y+(self.y_area*0.01),6.0]
+            anterior = self.waypoints[self.current_waypoint_index-1]
             distancia_do_anterior = ((anterior[0]-new_waypoint[0])**2+(anterior[1]-new_waypoint[1])**2)**0.5
-            if distancia > 3.0 and distancia_do_anterior > 2.0:
+            if distancia > 3.0 and distancia_do_anterior > 2.0 and distancia_do_anterior < 5.0:
                 self.waypoints.insert(self.current_waypoint_index,new_waypoint)
+                self.waypoints.insert(self.current_waypoint_index+1,new_waypoint_)
                 self.get_logger().info('new waypoint...')
                 time.sleep(2)
     def controle_missao(self):

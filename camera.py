@@ -71,9 +71,9 @@ class TraineeVisionNode(Node):
         '''
         retorna um booleano se a base estiver muito longe
         '''
-        if self.x_middle-320 > 200 or self.x_middle-320 < -200:
+        if self.x_middle-320 > 150 or self.x_middle-320 < -150:
             return False
-        elif self.y_middle-240 > 170 or self.y_middle-240 < -170: 
+        elif self.y_middle-240 > 110 or self.y_middle-240 < -110: 
             return False
         else:
             return True
