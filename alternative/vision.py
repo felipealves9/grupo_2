@@ -19,7 +19,8 @@ class MissionVisionNode(Node):
         self.image_sub = self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
         self.status_sub = self.create_subscription(Bool, '/mission/scanning', self.status_callback, 10)
         self.sequence_pub = self.create_publisher(String, '/mission/sequence', 10)
-        
+        self.edit_img = self.create_publisher(Image,'/camera/image_edit',10)
+        self.create_timer(1.0/20,self.editimg)
         self.found_targets = []
         self.mission_completed = False
         self.vision_active = False
@@ -30,7 +31,14 @@ class MissionVisionNode(Node):
             'Azul': 3
         }
         self.get_logger().info("Visão iniciada. Aguardando o drone chegar no ponto de início da varredura...")
-
+    def editimg(self):
+        try:
+            ros_img_msg = self.bridge.cv2_to_imgmsg(self.frame, encoding='bgr8')
+            ros_img_msg.header.stamp = self.get_clock().now().to_msg()
+            ros_img_msg.header.frame_id = 'camera_link'  # ou o frame da sua câmera
+            self.edit_img.publish(ros_img_msg)
+        except Exception as e:
+            self.get_logger().error(f'Erro ao publicar imagem editada: {e}')
     def status_callback(self, msg):
         if msg.data and not self.vision_active:
             self.get_logger().info("OLHOS ABERTOS! O drone iniciou a varredura limpa na arena.")

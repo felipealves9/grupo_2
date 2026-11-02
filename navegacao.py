@@ -2,32 +2,49 @@
 import rclpy
 from rclpy.node import Node
 from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
-from geometry_msgs.msg import PoseStamped,Twist # De onde ele vai marcar a posição (setpoint_position)
+from geometry_msgs.msg import PoseStamped # De onde ele vai marcar a posição (setpoint_position)
 from std_msgs.msg import String 
+from std_msgs.msg import Float32MultiArray
 from rclpy.qos import qos_profile_sensor_data
-
+import time
 class SimpleTakeoffLand(Node):
     def __init__(self): # função inicial
         super().__init__('simple_takeoff_land') # nome do node
+        '''
+        Soluções:
+        @@@@@   Subscribers   @@@@@
+            '/mavros/local_position/pose' local exato em que ele está
+            '/cmd_vel' alinhamento ordenado pela camera
+            '/finish' detectado todas as bases
+        @@@@@   Publishers    @@@@@
+            '/mavros/setpoint_position/local' publica as posições da varredura
+            '/mavros/setpoint_velocity/cmd_vel_unstamped' alinhamento do drone
+            '/camera/status' para ligar a câmera e desligar
+            '/align/ok' para permitir que ela scaneie a forma q ela quer
+        @@@@@   Clients   @@@@@
+            '/mavros/set_mode' define 'GUIDED'
+            '/mavros/cmd/arming' armamento
+            '/mavros/cmd/takeoff' takeoff
+            '/mavros/cmd/land' pouso ou landing
+        '''
         self.get_logger().info('Esperando conexão com MAVROS...') 
 
-        # Clientes para os serviços MAVROS
+        # Clients
         self.set_mode_client = self.create_client(SetMode, '/mavros/set_mode') # Set mode (Tem que ir para GUIDED)
         self.arming_client = self.create_client(CommandBool, '/mavros/cmd/arming') # Armar o drone
         self.takeoff_client = self.create_client(CommandTOL, '/mavros/cmd/takeoff') # Fazer o takeoff
         self.land_client = self.create_client(CommandTOL, '/mavros/cmd/land') # Fazer o pouso
-        # Missão para ele começar a andar
-        ## Para onde ir:
-        #Criei um publisher que manda onde ele deve ir
-        self.setpoint_position = self.create_publisher(PoseStamped,'/mavros/setpoint_position/local',qos_profile_sensor_data) #o qos adapta o tipo de comunicação, ele impediu de dar erro
-        # Publisher para enviar a velocidade de correção para o MAVROS:
-        self.velocity_pub = self.create_publisher(Twist, '/mavros/setpoint_velocity/cmd_vel_unstamped', 10)
-        self.timer = self.create_timer(timer_period_sec=0.1,callback=self.controle_missao)# Timer de publicação
-        ## Onde ele está:
+
+        # Publishers
+        self.setpoint_position = self.create_publisher(PoseStamped,'/mavros/setpoint_position/local',qos_profile_sensor_data) 
+        self.ativar_camera = self.create_publisher(String,'/camera/status',10)
+        self.ok_align = self.create_publisher(String,'/align/ok',10)
+        # Subscribers
         self.subscriber = self.create_subscription(PoseStamped,'/mavros/local_position/pose',self.posicao_atual,qos_profile_sensor_data)
-        self.create_subscription(Twist,'/cmd_vel',self.align,10)
-        self.create_subscription(String,'/align_bool_',self.align_bool,10)
-        # Aguarda convexão MAVROS
+        self.create_subscription(Float32MultiArray,'/cmd_vel',self.align,10)
+        self.finish_sub = self.create_subscription(String,'/finish',self.finish,10)
+
+        # Aguarda conexão MAVROS
         # Qualquer service pode ser usado para testar a conexão, não necessariamente o arming
         while rclpy.ok() and not self.arming_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Aguardando serviços do MAVROS...')
@@ -62,9 +79,15 @@ class SimpleTakeoffLand(Node):
 
         self.pending_action = 'set_mode'
         self.pending_future = None
-        self.align_base = False
-        self._correction_velocity = [0.0, 0.0, 0.0]
+
+        self.align_base = False # define se será alinhado ou não
         
+        self.correct_x = 0.0
+        self.correct_y = 0.0
+        self.correct_z = 0.0
+
+        self.timer = self.create_timer(timer_period_sec=0.1,callback=self.controle_missao) # Execução da missão
+    
     def set_mode(self, mode_name): # ativa o modo em que ele passa a ser guiado
         self.get_logger().info('set_mode...')
         req = SetMode.Request()
@@ -95,30 +118,33 @@ class SimpleTakeoffLand(Node):
         return self.land_client.call_async(req)
 
     def publicar_objetivo(self): # onde o Drone tem que ir
-        self.get_logger().info('Fazendo o caminho...')
         mensagem = PoseStamped()
         # mandar as coordenadas em um referencial
         mensagem.header.stamp = self.get_clock().now().to_msg()
         mensagem.header.frame_id = 'map'  # (0,0,0)
+        alvo = self.waypoints[self.current_waypoint_index] # o objetivo atual
+        self.get_logger().info(f'Indo para {alvo}.  {len(self.waypoints)}')
+        
+        self.alvo_x = alvo[0]
+        self.alvo_y = alvo[1]
+        self.alvo_z = alvo[2]
+
         # Posição onde ele quer chegar
         mensagem.pose.position.x = self.alvo_x
         mensagem.pose.position.y = self.alvo_y
         mensagem.pose.position.z = self.alvo_z
         mensagem.pose.orientation.w = 1.0 # sem rotação (por causa dos quaternions)
 
-        alvo = self.waypoints[self.current_waypoint_index] # o objetivo atual
-
-        self.alvo_x = alvo[0]
-        self.alvo_y = alvo[1]
-        self.alvo_z = alvo[2]
-        
         self.setpoint_position.publish(mensagem) # publica onde ele quer chegar
         # Calcular a distância que é aceitavel para concluir um alvo
         distancia_do_alvo = ((self.alvo_x-self.atual_x)**2 + 
-                             (self.alvo_y-self.atual_y)**2 + 
-                             (self.alvo_z-self.atual_z)**2)**0.5
-    
-        if distancia_do_alvo < 0.1:
+                                (self.alvo_y-self.atual_y)**2 + 
+                                (self.alvo_z-self.atual_z)**2)**0.5
+        if distancia_do_alvo < 1.0:
+            msg = String()
+            msg.data = 'ok'
+            self.ok_align.publish(msg)
+        if distancia_do_alvo < 0.5:
             # ELE CHEGOU
             # Se tiver algum objetivo faltando, continuar missão
             if self.current_waypoint_index < len(self.waypoints)-1:
@@ -127,32 +153,39 @@ class SimpleTakeoffLand(Node):
             else: # acabou a missão
                 self.get_logger().info('Caminho concluido!')
                 return 'ok'
-        return None      
+        return None
         
     def posicao_atual(self,mensagem): # onde o Drone está
         self.atual_x = mensagem.pose.position.x
         self.atual_y = mensagem.pose.position.y
         self.atual_z = mensagem.pose.position.z
-    def align_bool(self, msg):
-        if msg.data == 'align':
-            self.align_base = True
-        else: 
-            self.align_base = False
 
-    def align(self, msg_twist):
+    def align(self, msg_area):
         """Recebe as correções enviadas pelo nó de visão"""
-        self._correction_velocity = [
-            msg_twist.linear.x, 
-            msg_twist.linear.y, 
-            msg_twist.linear.z
-        ]
+        
+        self.y_area = msg_area.data[0] # os eixos estão invertidos 
+        self.x_area = msg_area.data[1] # os eixos estão invertidos
+
+        if self.x_area == 0.0 and self.y_area == 0.0:
+            self.align_base = False
+        else:
+            self.align_base = True
+            distancia = ((self.x_area*0.03)**2+(self.y_area*0.03)**2)**0.5
+        
+            new_waypoint = [self.atual_x+(self.x_area*0.01),self.atual_y+(self.y_area*0.01),8.0]
+            anterior = self.waypoints[self.current_waypoint_index]
+            distancia_do_anterior = ((anterior[0]-new_waypoint[0])**2+(anterior[1]-new_waypoint[1])**2)**0.5
+            if distancia > 3.0 and distancia_do_anterior > 2.0:
+                self.waypoints.insert(self.current_waypoint_index,new_waypoint)
+                self.get_logger().info('new waypoint...')
+                time.sleep(2)
     def controle_missao(self):
         if self.pending_action == 'set_mode': # ele já começa aqui mesmo
-    # None quando não está esperando nenhuma resposta
-            if self.pending_future == None: 
+        
+            if self.pending_future == None: # None quando não está esperando nenhuma resposta
                 self.pending_future = self.set_mode('GUIDED')
-    # o .done() indica se a tarefa parou de executar (obteve resposta)
-            if self.pending_future.done(): 
+            
+            if self.pending_future.done(): # o .done() indica se a tarefa parou de executar (obteve resposta)
                 self.pending_action = 'arm'
                 self.pending_future = None
                 self.get_logger().info('set_mode [ok]')
@@ -174,35 +207,32 @@ class SimpleTakeoffLand(Node):
                 self.get_logger().info('takeoff [ok]')
 
         elif self.pending_action == 'road':
-            # Se a visão detetou o alvo, pausa os waypoints e alinha sobre a base
-            if self.align_base: # alinhar
-                twist_msg = Twist()
-                twist_msg.linear.x = self._correction_velocity[0]
-                twist_msg.linear.y = self._correction_velocity[1]
-                twist_msg.linear.z = self._correction_velocity[2]
-                self.velocity_pub.publish(twist_msg)
-                self.get_logger().info('Alinhando...')
-            else: 
-                # Se NÃO vai alinhar:
-                stop_twist = Twist()
-                self.velocity_pub.publish(stop_twist)
-                # continua  normalmente:
-                if self.pending_future == None:
-                    self.pending_future = self.publicar_objetivo()
-                    
-                if self.pending_future == 'ok': # o ok é retornado pela função posição quando não há mais waypoints
-                    self.pending_action = 'landing'
-                    self.pending_future = None
-                    self.get_logger().info('road [ok]')
-
+            if self.current_waypoint_index > 0:
+                ativar_msg = String()
+                ativar_msg.data = 'on'
+                self.ativar_camera.publish(ativar_msg)
+            if self.pending_future == None:
+                self.pending_future = self.publicar_objetivo()
+            if self.pending_future == 'ok': # o ok é retornado pela função posição quando não há mais waypoints
+                self.pending_action = 'landing'
+                self.pending_future = None
+                self.get_logger().info('road [ok]')
         elif self.pending_action == 'landing':
+            ativar_msg = String()
+            ativar_msg.data = 'off'
+            self.ativar_camera.publish(ativar_msg)
             if self.pending_future == None:
                 self.pending_future = self.land()
             if self.pending_future.done():
                 self.pending_action = '' # Acabou e então ele não pode para sempre ficar preso nesse loop de mandar que a missão terminou
                 self.pending_future = None
                 self.get_logger().info('A Missão foi finalizada.')
-
+    def finish(self,msg):
+        self.current_waypoint_index = 0
+        self.waypoints.clear()
+        finish = [0.0,0.0,8.0]
+        self.waypoints.append(finish)
+        self.destroy_subscription(self.finish_sub)
 def main(args=None):
     rclpy.init(args=args)
     node = SimpleTakeoffLand()
