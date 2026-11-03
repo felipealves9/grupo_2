@@ -2,6 +2,8 @@
 
 Este repositório contém a solução do projeto final do Trainee de Eletrônica, englobando visão computacional, navegação e controle através do ROS 2. Abaixo está o guia passo a passo para configurar o ambiente Docker, posicionar os arquivos corretamente e executar a simulação.
 
+<img width="1280" height="720" alt="proof" src="https://github.com/user-attachments/assets/d724af8d-ec2f-41b5-8877-6b4e7c694a56" />
+
 ## 1. Configuração e Execução do Docker
 
 Para garantir o funcionamento adequado da interface gráfica e do servidor de áudio da sua máquina local no container, utilize os comandos abaixo.
