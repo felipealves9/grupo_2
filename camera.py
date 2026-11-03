@@ -86,11 +86,13 @@ class TraineeVisionNode(Node):
         if self.distance_pixel() == False:
             error_x = float(self.x_middle - 320)
             error_y = float(self.y_middle - 240)
-            msg.data = [-error_x,-error_y]
+            msg.data = [-error_x,-error_y,float(self.color_id)*0.1] # o color é importante para a navegação saber diferenciar as bases
             # Correção da publicação da String no ROS 2
             self.align_base_pub.publish(msg)
         else:
-            msg.data =[0.0,0.0]
+            a = 'receba'
+            self.detect_color_shape(a)
+            msg.data =[0.0,0.0,0.0]
             self.align_base_pub.publish(msg)
 
     def color(self): # tudo sobre a cor
@@ -139,7 +141,7 @@ class TraineeVisionNode(Node):
 
         if not self.contours: # se não detectar nada
             msg = Float32MultiArray()
-            msg.data = [0.0,0.0]
+            msg.data = [0.0,0.0,0.0]
             self.align_base_pub.publish(msg)
             return
 
@@ -149,7 +151,7 @@ class TraineeVisionNode(Node):
 
         if area < 20:
             msg = Float32MultiArray()
-            msg.data = [0.0,0.0]
+            msg.data = [0.0,0.0,0.0]
             self.align_base_pub.publish(msg)
             return
 
@@ -206,6 +208,7 @@ class TraineeVisionNode(Node):
             if not self.forma_ja_existe:
                 #pode anotar e seguir o curso
                 self.list_.append([self.color_id,self.form_id])
+                cv2.putText(self.frame,f'detect',(30,30), cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,0),2)
                 self.get_logger().info(f'detectada a forma: {form_name} na cor: {self.color_id}')
                 cv2.imwrite(os.path.join('.','image',f'frame_{form_name}_{self.color_name}.jpg'), self.frame)
         except Exception as e:
@@ -219,14 +222,14 @@ class TraineeVisionNode(Node):
         4 - parar de mandar mover
         '''
         if self.status_camera == 'on':
-            cv2.imshow('imagem',self.frame)
-            cv2.waitKey(20)
             if len(self.list_) < 3:
                 self.color() # encontrar cores que estão faltando
             else:
                 msg = String()
                 msg.data = ''
                 self.finish.publish(msg)
+        cv2.imshow('imagem',self.frame)
+        cv2.waitKey(20)
 def main(args=None):
     rclpy.init(args=args)
     node = TraineeVisionNode()
