@@ -56,20 +56,20 @@ class SimpleTakeoffLand(Node):
 
         self.alvo_x = 0.0
         self.alvo_y = 0.0
-        self.alvo_z = 2.0
+        self.alvo_z = 4.0
         # Lista dos caminhos que ele deve fazer
         self.waypoints = [
-            [-5.93,3.2,2.0],
-            [5.93,3.2,2.0],
-            [5.93,1.6,2.0],
-            [-5.93,1.6,2.0],
-            [-5.93,0.0,2.0],
-            [5.93,0.0,2.0],
-            [5.93,-1.6,2.0],
-            [-5.93,-1.6,2.0],
-            [-5.93,-3.2,2.0],
-            [5.93,-3.2,2.0],
-            [0.0,0.0,2.0]
+            [-5.93,3.2,4.0],
+            [5.93,3.2,4.0],
+            [5.93,1.6,4.0],
+            [-5.93,1.6,4.0],
+            [-5.93,0.0,4.0],
+            [5.93,0.0,4.0],
+            [5.93,-1.6,4.0],
+            [-5.93,-1.6,4.0],
+            [-5.93,-3.2,4.0],
+            [5.93,-3.2,4.0],
+            [0.0,0.0,4.0]
         ]
         self.current_waypoint_index = 0 # Primeiro sistema de cordenadas que ele publica
         
@@ -102,7 +102,7 @@ class SimpleTakeoffLand(Node):
         
         return self.arming_client.call_async(req) # retorna um pedido para armar
          
-    def takeoff(self, altitude=2.0): ## Sai do chao e vai até a altura desejada
+    def takeoff(self, altitude=4.0): ## Sai do chao e vai até a altura desejada
         self.get_logger().info('takeoff...')
         req = CommandTOL.Request()
         req.altitude = altitude
@@ -140,7 +140,7 @@ class SimpleTakeoffLand(Node):
         distancia_do_alvo = ((self.alvo_x-self.atual_x)**2 + 
                                 (self.alvo_y-self.atual_y)**2 + 
                                 (self.alvo_z-self.atual_z)**2)**0.5
-        if distancia_do_alvo < 0.5:
+        if distancia_do_alvo < 0.2:
             if self.atual_z <1.7:
                 msg = String()
                 msg.data = 'ok'
@@ -166,22 +166,20 @@ class SimpleTakeoffLand(Node):
         self.y_area = msg_area.data[0] # os eixos estão invertidos 
         self.x_area = msg_area.data[1] # os eixos estão invertidos
         self.color_id = msg_area.data[2] # a cor!!!!
-        self.z_area = 2.1 + self.color_id # self color id é um valor entre 0.0 0.1 ou 0.2 -> (8.1)
+        self.z_area = 4.01 + self.color_id # self color id é um valor entre 0.0 0.1 ou 0.2
         if self.x_area == 0.0 and self.y_area == 0.0:
             self.align_base = False
         else:
             ja_existe_cor = any(len(waypoint) >= 3 and waypoint[2] == self.z_area for waypoint in self.waypoints)
             if not ja_existe_cor:
                 self.align_base = True
-                distancia = ((self.x_area*0.03)**2+(self.y_area*0.03)**2)**0.5
-        
-                new_waypoint = [self.atual_x+(self.x_area*0.01),self.atual_y+(self.y_area*0.01),self.z_area]
+                distancia = ((self.x_area*0.01)**2+(self.y_area*0.01)**2)**0.5
+                new_waypoint = [self.atual_x+(self.x_area*0.004),self.atual_y+(self.y_area*0.004),self.z_area]
                 anterior = self.waypoints[self.current_waypoint_index-1]
                 distancia_do_anterior = ((anterior[0]-new_waypoint[0])**2+(anterior[1]-new_waypoint[1])**2)**0.5
                 if distancia > 0.3 and distancia_do_anterior > 0.3:
                     self.waypoints.insert(self.current_waypoint_index,new_waypoint)
                     self.get_logger().info('new waypoint...')
-                    time.sleep(1)
     def controle_missao(self):
         if self.pending_action == 'set_mode': # ele já começa aqui mesmo
         
@@ -203,8 +201,8 @@ class SimpleTakeoffLand(Node):
 
         elif self.pending_action == 'takeoff':
             if self.pending_future == None:
-                self.pending_future = self.takeoff(altitude=2.0)
-            if self.pending_future.done() and self.atual_z > 1.7:
+                self.pending_future = self.takeoff(altitude=4.0)
+            if self.pending_future.done() and self.atual_z > 3.9:
                 self.pending_action = 'road'
                 self.pending_future = None
                 self.get_logger().info('takeoff [ok]')
@@ -233,7 +231,7 @@ class SimpleTakeoffLand(Node):
     def finish(self,msg):
         self.current_waypoint_index = 0
         self.waypoints.clear()
-        finish = [0.0,0.0,2.0]
+        finish = [0.0,0.0,4.0]
         self.waypoints.append(finish)
         self.destroy_subscription(self.finish_sub)
 def main(args=None):

@@ -63,6 +63,8 @@ class TraineeVisionNode(Node):
             #Converter o frame para o OpenCV
             self.frame = self.bridge.imgmsg_to_cv2(msg,'bgr8')
             self.hsvImage = cv2.cvtColor(self.frame,cv2.COLOR_BGR2HSV)
+            cv2.imshow('imagem',self.frame)
+            cv2.waitKey(60)
         except Exception as e:
             self.get_logger().error('Erro na conversão da imagem')
             return
@@ -228,8 +230,6 @@ class TraineeVisionNode(Node):
                 msg = String()
                 msg.data = ''
                 self.finish.publish(msg)
-        cv2.imshow('imagem',self.frame)
-        cv2.waitKey(20)
 def main(args=None):
     rclpy.init(args=args)
     node = TraineeVisionNode()
