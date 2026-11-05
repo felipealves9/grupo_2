@@ -48,6 +48,10 @@ class TraineeVisionNode(Node):
         self.x_middle = 320
         self.y_middle = 240
         self.status_camera = None
+        
+        # Variável para controlar os sons e evitar que toquem em loop infinito
+        self.sons_tocados = False
+        
         self.create_timer(1.0/20,self.scan_route)
 
     def status(self,msg):
@@ -215,6 +219,7 @@ class TraineeVisionNode(Node):
                 cv2.imwrite(os.path.join('.','image',f'frame_{form_name}_{self.color_name}.jpg'), self.frame)
         except Exception as e:
             self.get_logger().info('erro')
+
     def scan_route(self):
         '''
         Definir todo o processo de escaneamento
@@ -230,6 +235,45 @@ class TraineeVisionNode(Node):
                 msg = String()
                 msg.data = ''
                 self.finish.publish(msg)
+                
+                # CHAMA A FUNÇÃO DE ÁUDIO QUANDO A LISTA TEM 3 ITENS
+                if not self.sons_tocados:
+                    self.tocar_sons()
+                    self.sons_tocados = True
+
+    def tocar_sons(self):
+        '''
+        Ordena os itens com base no valor Hexadecimal da cor e toca o som.
+        O valor da cor em Hex cresce nesta ordem: Azul (0000FF), Verde (00FF00), Vermelho (FF0000).
+        Como seus color_id são: Azul=0, Verde=1, Vermelho=2, ordenar pelo color_id 
+        automaticamente respeita a ordem do desafio!
+        '''
+        self.get_logger().info('Todas as 3 formas encontradas! Reproduzindo áudios na ordem RGB...')
+        
+        # Ordena a lista pelo id da cor (item[0])
+        lista_ordenada = sorted(self.list_, key=lambda x: x[0], reverse=True)
+        
+        # Dicionário com os nomes dos arquivos de som para cada id de forma
+        # Formas: 3 = triangulo, 6 = hexagono, 8 = circulo
+        arquivos_som = {
+            3: 'som1.mp3',
+            6: 'som2.mp3',
+            8: 'som3.mp3'
+        }
+        
+        # Define o caminho absoluto para a pasta onde os áudios estão localizados no seu workspace
+        caminho_base = os.path.expanduser('~/simulation/starts/avant_ws/src/pkg_avant/pkg_avant')
+
+        # Percorre a lista já na ordem certa e toca um por um
+        for item in lista_ordenada:
+            form_id = item[1]
+            som = arquivos_som.get(form_id)
+            if som:
+                caminho_completo = os.path.join(caminho_base, som)
+                self.get_logger().info(f'Tocando: {caminho_completo}')
+                # Adicionando aspas em volta do caminho evita erros caso existam espaços no nome das pastas
+                os.system(f'mpg123 "{caminho_completo}"')
+
 def main(args=None):
     rclpy.init(args=args)
     node = TraineeVisionNode()
