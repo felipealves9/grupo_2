@@ -7,6 +7,28 @@ from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
 from rclpy.qos import qos_profile_sensor_data
 import time
+
+def gerar_waypoints_grid(x_min, x_max, y_min, y_max, step_y, altitude):
+    """Gera uma lista de waypoints em padrão 'zigzag' (lawnmower pattern)."""
+    waypoints = []
+    current_y = y_max
+    ida = True
+
+    while current_y >= y_min:
+        if ida:
+            waypoints.append([x_min, current_y, altitude])
+            waypoints.append([x_max, current_y, altitude])
+        else:
+            waypoints.append([x_max, current_y, altitude])
+            waypoints.append([x_min, current_y, altitude])
+
+        current_y -= step_y
+        ida = not ida
+
+    # Ponto final de retorno ao centro
+    waypoints.append([0.0, 0.0, altitude])
+    return waypoints
+
 class SimpleTakeoffLand(Node):
     def __init__(self): # função inicial
         super().__init__('simple_takeoff_land') # nome do node
@@ -57,25 +79,20 @@ class SimpleTakeoffLand(Node):
         self.alvo_x = 0.0
         self.alvo_y = 0.0
         self.alvo_z = 4.0
-        # Lista dos caminhos que ele deve fazer
-        self.waypoints = [
-            [-5.93,3.2,4.0],
-            [5.93,3.2,4.0],
-            [5.93,1.6,4.0],
-            [-5.93,1.6,4.0],
-            [-5.93,0.0,4.0],
-            [5.93,0.0,4.0],
-            [5.93,-1.6,4.0],
-            [-5.93,-1.6,4.0],
-            [-5.93,-3.2,4.0],
-            [5.93,-3.2,4.0],
-            [0.0,0.0,4.0]
-        ]
+        
+        # Geração dinâmica dos waypoints (Grid)
+        self.waypoints = gerar_waypoints_grid(
+            x_min=-5.93,
+            x_max=5.93,
+            y_min=-3.2,
+            y_max=3.2,
+            step_y=1.6,
+            altitude=4.0
+        )
         self.current_waypoint_index = 0 # Primeiro sistema de cordenadas que ele publica
         
         # Roda o movimento
         self.get_logger().info('Conexão estabelecida. Iniciando sequência de voo.')
-
 
         self.pending_action = 'set_mode'
         self.pending_future = None
@@ -138,8 +155,8 @@ class SimpleTakeoffLand(Node):
         self.setpoint_position.publish(mensagem) # publica onde ele quer chegar
         # Calcular a distância que é aceitavel para concluir um alvo
         distancia_do_alvo = ((self.alvo_x-self.atual_x)**2 + 
-                                (self.alvo_y-self.atual_y)**2 + 
-                                (self.alvo_z-self.atual_z)**2)**0.5
+                             (self.alvo_y-self.atual_y)**2 + 
+                             (self.alvo_z-self.atual_z)**2)**0.5
         if distancia_do_alvo < 0.2:
             if self.atual_z <1.7:
                 msg = String()
@@ -180,12 +197,13 @@ class SimpleTakeoffLand(Node):
                 if distancia > 0.3 and distancia_do_anterior > 0.3:
                     self.waypoints.insert(self.current_waypoint_index,new_waypoint)
                     self.get_logger().info('new waypoint...')
+                    
     def controle_missao(self):
         if self.pending_action == 'set_mode': # ele já começa aqui mesmo
         
             if self.pending_future == None: # None quando não está esperando nenhuma resposta
                 self.pending_future = self.set_mode('GUIDED')
-            
+           
             if self.pending_future.done(): # o .done() indica se a tarefa parou de executar (obteve resposta)
                 self.pending_action = 'arm'
                 self.pending_future = None
@@ -218,6 +236,7 @@ class SimpleTakeoffLand(Node):
                 self.pending_action = 'landing'
                 self.pending_future = None
                 self.get_logger().info('road [ok]')
+                
         elif self.pending_action == 'landing':
             ativar_msg = String()
             ativar_msg.data = 'off'
@@ -228,12 +247,14 @@ class SimpleTakeoffLand(Node):
                 self.pending_action = '' # Acabou e então ele não pode para sempre ficar preso nesse loop de mandar que a missão terminou
                 self.pending_future = None
                 self.get_logger().info('A Missão foi finalizada.')
+                
     def finish(self,msg):
         self.current_waypoint_index = 0
         self.waypoints.clear()
         finish = [0.0,0.0,4.0]
         self.waypoints.append(finish)
         self.destroy_subscription(self.finish_sub)
+
 def main(args=None):
     rclpy.init(args=args)
     node = SimpleTakeoffLand()
