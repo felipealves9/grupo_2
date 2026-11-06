@@ -26,7 +26,8 @@ setup(
     entry_points={
         'console_scripts': [
             'simple_takeoff_land = pkg_avant.takeoff:main',
-            'mission_vision_node = pkg_avant.vision:main'
+            'mission_vision_node = pkg_avant.vision:main',
+            'mission_vision_node_copy = pkg_avant.vision_copy:main'
         ],
     },
 )
